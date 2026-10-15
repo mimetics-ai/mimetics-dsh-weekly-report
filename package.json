@@ -18,7 +18,9 @@
     "pipeline",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md"
   ],
   "dsh": {
     "bundle": {
