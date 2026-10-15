@@ -1,0 +1,174 @@
+# =============================================================
+# mimetics-dsh-weekly-report — 输入源适配器
+# 用户可在此增减素材类型、改字段映射（例如公司 Jira 导出字段名不同）
+# 实现状态：🔲 解析逻辑待实现（本次仅定义契约）
+# =============================================================
+
+# 素材不足闸门（对应铁律 R0）
+gate:
+  require_at_least_one: true
+  empty_file_as_missing: true
+  garbled_text_ratio_threshold: 0.5   # 乱码字符占比 > 50% 视为无法解析
+
+sources:
+  - id: notes
+    label: 本周工作记录
+    required: false
+    detect:
+      ext: [.md, .txt, .rtf]
+      filename_hint: ["周报", "工作记录", "待办", "todo", "log", "日志"]
+    split:
+      mode: line            # line | bullet | blank_line | heading
+      bullet_prefixes: ["-", "*", "•", "1.", "2."]
+    map:
+      text: "$line"
+
+  - id: chat
+    label: 聊天摘录
+    required: false
+    detect:
+      ext: [.txt, .md, .csv]
+      filename_hint: ["chat", "聊天", "微信", "群聊", "企微", "钉钉", "im记录"]
+      # 企微/微信/钉钉导出的典型形态： "张三 2026-10-12 10:30:15" 或 "张三: 内容"
+      # 正则一律用 YAML 单引号
+      speaker_line_regex: '^(?P<speaker>[\u4e00-\u9fa5A-Za-z0-9_]{1,20})\s+(?P<ts>\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)\s*$'
+      inline_speaker_regex: '^(?P<speaker>[\u4e00-\u9fa5A-Za-z0-9_]{1,20})[：:]\s?(?P<text>.+)$'
+    split:
+      mode: speaker_turn   # 按发言人轮次切分
+    map:
+      speaker: speaker
+      timestamp: ts
+      text: text
+      date: date
+    status_hint: null      # 聊天记录无机器状态，一律靠关键词判定
+    noise_filters:         # 这些内容不进入结果
+      - 收到
+      - 好的
+      - OK
+      - 嗯嗯
+      - 哈哈
+      - '\[图片\]'
+      - '\[表情\]'
+      - 撤回了一条消息
+    keep: [ticket, date, percent, count, deliverable]   # 命中即保留（避免被噪声过滤误杀）
+
+  - id: jira
+    label: Jira 工单
+    required: false
+    parser: table          # 表格类素材走 CSV 解析器（由配置声明，代码不按 id 硬判）
+    detect:
+      ext: [.csv, .tsv]
+      header_hints: ["Issue key", "工单号", "Key", "Summary", "标题", "Status", "状态"]
+    # 字段名可能因导出语言而异 → 左右两列都接受
+    map:
+      ticket: ["Issue key", "Key", "工单号", "编号"]
+      title: ["Summary", "标题", "摘要"]
+      status: ["Status", "状态"]
+      assignee: ["Assignee", "经办人", "处理人"]
+      sprint: ["Sprint", "迭代"]
+      duedate: ["Due Date", "截止日期", "计划完成"]
+      comment: ["Comment", "备注"]
+    status_map:            # Jira 原生状态 → 内部 status（对应 classify.yaml）
+      "Done": completed
+      "Closed": completed
+      "Resolved": completed
+      "In Progress": in_progress
+      "In Review": in_progress
+      "To Do": planned
+      "Blocked": blocked
+      "Open": in_progress
+
+  - id: xlsx
+    label: Excel 表格
+    required: false
+    parser: xlsx           # 表格类素材（只读值，不算公式）
+    detect:
+      # .csv/.tsv 一并纳入：Excel 另存为 CSV 后仍走同一套表头映射（"降级版"通道）
+      ext: [.xlsx, .xlsm, .xls, .csv, .tsv]
+      filename_hint: ["排期", "报表", "数据", "计划", "台账", "清单", "sheet", "表"]
+      # 表头线索：与 jira 同为表格类，靠 _detect 的"字段匹配度"区分（中文表头归本适配器）
+      header_hints: ["工单号", "事项", "任务", "负责人", "截止日期", "进展"]
+    read:
+      all_sheets: true     # 读取所有 sheet
+      data_only: true      # 只取单元格的值；公式取 Excel 缓存值，无缓存则跳过（不计算）
+      skip_charts: true    # 图表/图片/批注不在值域内，天然跳过
+      max_rows_per_sheet: 2000   # 安全上限，防超大表拖死
+      max_cols: 50
+    # 表头候选名（英文/中文都接受，与 jira 同款配置驱动）
+    map:
+      ticket: ["工单号", "编号", "任务号", "需求号", "ID", "Key", "Issue key"]
+      title: ["事项", "任务", "标题", "内容", "工作项", "摘要", "Summary", "Task"]
+      status: ["状态", "进展", "进度", "Status"]
+      owner: ["负责人", "经办人", "处理人", "责任人", "Owner", "Assignee"]
+      duedate: ["截止日期", "计划完成", "完成时间", "日期", "Due Date", "Deadline"]
+      note: ["备注", "说明", "描述", "Comment", "Note"]
+    status_map:            # 表格里的状态词 → 内部 status（可自由增删）
+      "已完成": completed
+      "完成": completed
+      "已上线": completed
+      "已交付": completed
+      "进行中": in_progress
+      "开发中": in_progress
+      "联调中": in_progress
+      "待开始": planned
+      "未开始": planned
+      "计划中": planned
+      "阻塞": blocked
+      "受阻": blocked
+      "待确认": blocked
+      "风险": blocked
+    fallback:
+      join_all: true       # 表头认不出来时：直接拼接该行所有非空单元格
+      separator: "，"
+    # 读取成功后的用户提示（R0 闸门之外的正向反馈；不得写进四模块，避免撑出第五模块）
+    notice: 已读取表格文本数据
+
+  - id: meeting
+    label: 会议纪要
+    required: false
+    detect:
+      ext: [.md, .txt, .docx]
+      filename_hint: ["纪要", "会议", "评审", "对齐"]
+      # 常见分节标题
+      section_hints: ["决议", "结论", "待办", "Action Items", "下一步", "风险"]
+    split:
+      mode: heading
+    map:
+      decision: "决议|结论|结论与决议"
+      action: "待办|Action|Action Items|下一步"
+      risk: "风险|阻塞|问题"
+      attendee: "参会|与会"
+    # 分节 → 状态提示：同一来源内部的语义，优先于关键词判定（classify.hint_policy）
+    # 这样「## 待办」下的「…10月25日前完成」不会被误判成"已完成"
+    section_status_hint:
+      decision: null
+      action: planned
+      risk: blocked
+      default: null
+
+  - id: log
+    label: 日志/提交记录
+    required: false
+    detect:
+      ext: [.txt, .log, .md, .csv]
+      filename_hint: ["commit", "git", "changelog", "日志", "操作记录"]
+    split:
+      mode: line
+    map:
+      timestamp: "$ts"
+      text: "$msg"
+
+# ---- 可选材料（用于对齐口径，不作为条目来源）----
+optional:
+  - id: metrics_sheet
+    label: 数据表
+    ext: [.xlsx, .csv, .tsv]
+    use: metric_reference    # 仅用于校验/补充量化数据，缺列时不猜
+  - id: last_report
+    label: 上周周报
+    ext: [.md, .txt, .docx]
+    use: continuity          # 用于承接口径（如上周"进行中"→本周状态变化）
+  - id: company_template
+    label: 公司模板
+    ext: [.md, .txt, .docx, .xlsx]
+    use: wording_align       # 对齐字段名与措辞；**不改变四模块固定结构**（R5）

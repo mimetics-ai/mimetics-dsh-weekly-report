@@ -1,0 +1,106 @@
+# =============================================================
+# mimetics-dsh-weekly-report — 铁律（R0–R7）
+# 每条都有 enabled 开关；关闭仅用于本地调试，交付版本必须全部 enabled: true
+# severity: fatal = 违反即本次输出失败；warn = 需提示用户
+# =============================================================
+
+rules:
+  - id: R0
+    name: 素材存在性闸门
+    severity: fatal
+    enabled: true
+    description: >
+      用户未提供任何可用素材（无附件、无粘贴文本、无可读路径）时，立即停止，
+      只返回 no_material_message 一行，不得附加分析、示例、追问或安抚性文字。
+    detail:
+      empty_file_counts_as_missing: true     # 空文件 / 全是乱码 → 同样走 R0
+      partial_material_is_ok: true           # 只有半天记录 → 不算无素材，正常生成
+    message_key: no_material_message         # 文案取自 skill.config.yaml
+
+  - id: R1
+    name: 绝不编造数据
+    severity: fatal
+    enabled: true
+    description: >
+      严禁推测、补全、美化任何数字、日期、进度百分比、交付物名称。
+      只允许搬运素材中真实出现的内容。
+    detail:
+      forbid_arithmetic: true      # 禁止算术推演（如 3 个模块完成 2 个 → 67%）
+      forbid_estimating_words: true # 禁止用「大概」「预计」「约」填补素材没有的数值
+      whitelist_words: []           # 允许出现的"看起来像推测"的词（默认空，保持严格）
+
+  - id: R2
+    name: 缺数据不留空
+    severity: fatal
+    enabled: true
+    description: >
+      事项缺少数据支撑时**绝不编造、绝不留空、绝不改写成含糊表述**。
+      占位符**只允许出现在"模块完全为空"时**（文案见 modules 各模块 `empty_item`，现统一为「- 待确认」）；
+      **有内容的模块里，每一条都必须是真实内容，不得追加任何占位符**（2026-10-13 缺陷 D4 定论）。
+      真实条目的缺数据只在 warnings（诊断折叠块）里提示，不进正文。
+
+  - id: R3
+    name: 空模块占位
+    severity: fatal
+    enabled: true
+    description: >
+      某模块按素材确实无条目时，保留模块标题，其下写 empty_item。
+      不得删除标题，不得把别的模块内容挪进来充数。
+
+  - id: R4
+    name: 下周计划不自行安排
+    severity: fatal
+    enabled: true
+    description: >
+      用户/素材未提供下周计划时，〖下周计划〗下只写缺失计划占位（待确认）。
+      严禁由本周进行中事项"顺手"推导下周任务。
+
+  - id: R5
+    name: 四模块不增不减
+    severity: fatal
+    enabled: true
+    description: 不新增〖本周总结〗〖亮点〗〖心得体会〗等模块，也不合并〖进行中〗与〖风险与阻塞〗。
+
+  - id: R6
+    name: 一事不重复
+    severity: fatal
+    enabled: true
+    description: 同一事项不得同时出现在两个模块；跨模块疑似重复时，按当前真实状态归入唯一模块。
+
+  - id: R7
+    name: 素材冲突不擅自取舍
+    severity: warn
+    enabled: true
+    description: >
+      同一事项在不同素材中状态矛盾（聊天说已完成、工单仍未关闭）时，
+      不选一个当答案 —— 归入〖风险与阻塞〗并写明冲突点，或直接向用户确认。
+    detail:
+      conflict_section: blocked
+      conflict_marker: "⚠️ 状态冲突："   # 写入条目时的前缀
+      ask_user_if_severe: true           # 影响交付节点时倾向于向用户确认
+
+  - id: R8
+    name: 宁可漏合，绝不误合
+    severity: fatal
+    enabled: true
+    description: >
+      合并同类项时阈值只能偏保守：漏合并用户手工并一下即可；
+      误合并会让两件不相干的事挤进一条，导致汇报失真、业务误判。
+      严禁为了"看起来整齐"而放宽相似度阈值，严禁在没有信号背书时强行合并。
+    detail:
+      policy: conservative             # 只允许 conservative；aggressive 需用户显式改配置
+      require_signal: true             # 合并必须有可复述的依据（工单号/交付物/相似度）
+      audit: true                      # 每次合并记录依据，可用 --audit 复核
+      tuning_owner: user               # 需要更强合并时，由用户自己调阈值
+
+# 全局：输出前必须内部执行的检查（不展示给用户）
+selfcheck:
+  - 四模块标题齐全、顺序正确、均为〖〗形式
+  - 每个模块下有 "- " 开头的条目（空模块已用占位）
+  - 无素材中不存在的数字/日期/交付物
+  - 无自算百分比
+  - "**有内容的模块内不出现占位符（占位符只用于空模块）**"
+  - 无下周计划时，〖下周计划〗为 "- 待确认"
+  - 每个事项 ≤ max_lines_per_item 行
+  - 无跨模块重复事项
+  - 未新增第五个模块

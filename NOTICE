@@ -1,0 +1,27 @@
+mimetics-dsh-weekly-report
+Copyright (c) 2026 广州永摹纪智能科技有限公司
+
+本产品包含的原创代码（含 `lib/`、`src/` 与随包的 `pipeline/` 流水线）以 MIT 许可证发布，全文见 LICENSE。
+
+第三方组件
+----------
+
+本插件在运行时依赖以下由 DeepSeek Harness（DSH）提供的 peer 依赖，它们不随本包分发，
+由宿主环境（dsh）提供；其许可证与版本以各自发布物为准：
+
+  - @deepseek-ai/cordis      (~4.0.4)
+  - @deepseek-ai/dsh-tools   (0.2.0-rc.2)
+
+开发期依赖（typescript、@types/node、@deepseek-ai/schemastery）同样不随本包分发。
+
+运行期外部依赖
+--------------
+
+本插件通过 `execFile` 调用**用户本机的 Python 解释器**运行随包流水线；Python 与标准库的许可
+依用户环境而定，本项目不附带 Python 运行时。
+
+声明
+----
+
+本项目为社区插件，非 DeepSeek 官方项目；遵循 DeepSeek Harness 插件规范
+（导出 `apply(ctx)`，通过 `dsh.bundle.patch` 声明 bundle）。

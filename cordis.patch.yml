@@ -1,0 +1,15 @@
+# harness-plugin-weekly-report —— dsh bundle 补丁层
+#
+# 本文件由 package.json 的 `dsh.bundle.patch` 指向，属于 bundle 层。
+# 它只负责把插件的 Cordis 行「插入」到 profile 的插件树里；
+# 真正的部署参数（Python 路径、项目根）应写在 profile 自己的
+# `~/.dsh/profiles/web/cordis.patch.yml`（用户层）里覆盖，避免改这个包。
+#
+# 行内配置说明：
+#   pythonPath  —— 留空则按内置候选表自动探测
+#   projectRoot —— 留空则默认取本插件的上级目录（即流水线项目根）
+- insert:
+    - id: weekly-report
+      name: 'harness-plugin-weekly-report'
+      disabled: false
+      config: {}

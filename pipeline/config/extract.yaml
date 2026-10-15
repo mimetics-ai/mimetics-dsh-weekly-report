@@ -1,0 +1,197 @@
+# =============================================================
+# mimetics-dsh-weekly-report — 量化数据抽取 + 合并同类项
+# 铁律 R1：只抽取素材中**原文出现**的数值。禁止算术推演。
+# 边界校验（重点）：每个模式都有 validator，命中后还要过"上下文检查"才算数，
+#   防止「10:30」被当成工单号、「3.5万元」被当成版本号这类误报。
+# =============================================================
+
+# ---- 零、全局抽取开关 ----
+extraction:
+  enabled: true
+  # 重叠消解：同一段文字被多个模式命中时，priority 高者胜，低者丢弃
+  overlap_policy: priority_win
+  # 命中上下文检查总开关（关闭仅用于调试，交付版本必须 true）
+  boundary_check: true
+  # 一条事项最多保留多少个数值（超出按 priority 截断）
+  max_metrics_per_item: 3
+  # 铁律 R2 的"有数据"判据：**只有这里的类型才算数据支撑**。
+  #   deliverable（交付物名）、date 之类的相对日期……凡是列在这里的都算；
+  #   没列的（如 deliverable）不算 —— 否则"提到一个文档名"就会被当成已有数据。
+  numeric_types: [percent, date, count, money, duration, version, ticket]
+
+# ---- 一、量化数据模式（正则）----
+# priority 越大越优先（用于重叠消解）。命中后原样搬运，不做任何换算/近似。
+patterns:
+  - id: percent
+    label: 百分比
+    priority: 75
+    # 注意：正则一律用 YAML 单引号（避免反斜杠被当成转义符）
+    regex: '\d+(?:\.\d+)?\s?%'
+    example: '98%'
+
+  - id: date
+    label: 日期/节点
+    priority: 85
+    regex: '(?:\d{4}[-/年])?\d{1,2}[-/月]\d{1,2}日?|下(?:周|月)[一二三四五六日天]?|本(?:周|月)[一二三四五六日天]?|Q[1-4]|第[一二三四]季度'
+    example: '10月20日 / 下周三 / Q4'
+
+  - id: version
+    label: 版本号
+    # 优先级刻意压低：'3.5万元' / '2026.10' 这类误报一律让位给 money / date
+    priority: 40
+    regex: 'v?\d+\.\d+(?:\.\d+)?(?:-[\w.]+)?'
+    example: 'v0.3.1'
+
+  - id: count
+    label: 数量
+    priority: 70
+    # 带一个短名词尾巴，让"3 个"变成"3 个核心指标"（仍是原文片段，不做加工）
+    regex: '\d+\s?(?:个|条|人|次|份|台|套|项|家|页|天|小时|h|轮)(?:[^\s，,。;；：:！!？?、（）()]{0,6})?'
+    example: '3 个核心指标'
+
+  - id: ticket
+    label: 工单号
+    priority: 100
+    regex: '[A-Z][A-Z0-9]{1,9}-\d{1,6}'
+    example: 'PROJ-1234'
+
+  - id: money
+    label: 金额
+    priority: 90
+    regex: '[¥￥]?\d+(?:\.\d+)?\s?(?:元|万元|万|美元|USD|CNY)'
+    example: '12 万元'
+
+  - id: duration
+    label: 工时/耗时
+    priority: 80
+    regex: '(?:耗时|用时|共计)\s?\d+(?:\.\d+)?\s?(?:小时|天|人日|人天)'
+    example: '耗时 3 人日'
+
+  - id: deliverable
+    label: 交付物名称
+    priority: 30
+    # 交付物靠"名词后缀"识别，非数字型数据
+    suffixes: [文档, 报告, 方案, 原型, 设计稿, 版本, 看板, 接口, 模块, PPT, deck, 视频, 小程序]
+    regex: '[\u4e00-\u9fa5A-Za-z0-9]{2,20}(?:文档|报告|方案|原型|设计稿|版本|看板|接口|模块|PPT|deck|视频|小程序)\s?(?:v?\d+\.\d+(?:\.\d+)?)?'
+
+# ---- 二、边界校验细则（防误报，重难点）----
+boundary:
+  # 通用：命中片段左右紧邻数字 → 说明是从一个更大的数字里切出来的，丢弃
+  reject_if_adjacent_digit: true
+
+  ticket:
+    min_prefix_len: 2                 # 'T-10' 这种一律不认（前缀太短）
+    deny_prefixes: [T, Z, X, N, Q]
+    # 左边紧邻这些字符 → 更像是时间/路径/小数的一部分
+    deny_left_chars: ":/-.0123456789"
+    # 右边紧跟 冒号+2位数字 → 时间是 10:30 这种形态
+    deny_right_time_regex: ':\d{2}'
+    # 出现在 URL / 邮箱上下文里不算工单号
+    deny_context: ['://', '@']
+
+  version:
+    require_v_prefix_when:            # 满足任一条时必须有 v 前缀，否则丢弃
+      # 数字头部 ≥ 4 位（如 2026.10 很像年月）
+      head_digits_ge: 4
+    # 右边紧跟这些字符 → 是数量/货币/日期的一部分，不是版本号
+    deny_right_chars: ['元', '万', '亿', '%', '％', '年', '月', '日', '号', '个', '条', '次', '人']
+    deny_left_chars: ['¥', '￥', '.', '-']
+
+  money:
+    deny_right_digit: true
+  count:
+    deny_left_digit: true
+    deny_left_chars: ['.']
+    deny_right_chars: ['.']
+  percent:
+    deny_left_digit: true
+    deny_left_chars: ['.']
+    deny_right_chars: ['.']
+  date:
+    # 纯数字日期必须"年月日/分隔符"齐全，避免从 '2026' 里切
+    numeric_require_full: true
+    deny_left_digit: true
+  deliverable:
+    min_name_len: 2                   # 后缀前的名称至少 2 字
+    deny_exact_suffix: true           # 只有后缀本身（如"版本"）不算交付物
+
+# ---- 三、抽取后的呈现规则 ----
+render:
+  placement: suffix          # suffix = 附在事项末尾 | none = 不单独列
+  separator: "，"            # 拼接分隔符
+  dedupe: true               # 同一数值不在同一条目里重复出现
+  max_metrics_per_item: 3    # 超出则只保留信息量最大的 3 个
+  # 铁律 R2：缺数据提示**只进 warnings（诊断折叠块），绝不写进正文**。
+  #   正文里的占位符只允许出现在"模块完全为空"时（sections.yaml → empty_item）。
+  #   哪些模块需要数据背书的**诊断**，由 sections.yaml → sections[].require_metrics 按模块声明；
+  #   "有数据"的口径见 extraction.numeric_types。**任何情况下都不给真实条目补占位符**（缺陷 D4）。
+  missing_marker_key: missing_data_placeholder  # 占位文案取自 input.*
+
+  # =====================================================================
+  # 同一「对象」出现多个取值时的**呈现**策略（缺陷 D7-2，**展示层**）
+  #   场景：`完成风控规则配置，覆盖 3 条规则` 与 `…覆盖 5 条规则` 合并后
+  #         曾输出「覆盖 3 条规则，5 条规则」——语法不通，也看不出数值冲突。
+  #   判定键 = 同类型 + **同数值尾部（单位/对象名）**：
+  #     `3 条规则` 与 `5 条规则` 尾部都是 `条规则` → 同一对象的两个取值；
+  #     `3 个核心指标` 与 `2 个边界用例` 尾部不同 → 是两件事，不并（否则等于编造数据，违反 R1）。
+  #   ⚠️ 抽取结果照原样并存两条事实（dedup._union_metrics **不做取舍**）；
+  #      本组键只决定「怎么呈现」，既不改事实、也不改合并分组（R8 的语义资产）。
+  #   policy：range = 合成区间「3~5 条规则」/ max = 取数值最大者 / first = 取正文里已有的那个
+  # =====================================================================
+  metric_conflict_policy: range
+  range_types: [count, percent, money, duration]   # 日期/版本/工单号不参与区间
+  range_separator: "~"
+
+# ---- 四、合并同类项（去重）----
+dedup:
+  enabled: true
+  # =====================================================================
+  # 铁律 R8：宁可漏合，绝不误合（用户 2026-10-12 拍板，同步登记在 rules.yaml）
+  #   漏合并 → 用户手工并一下即可；
+  #   误合并 → 两件不相干的事挤进一条，汇报失真、业务误判。
+  #   因此本项阈值只允许偏保守；代码里没有任何"为了整齐而放宽"的兜底。
+  #   需要更强合并的用户，自己调下面三个数（调优指引见 SKILL.md 第 1 节）。
+  # =====================================================================
+  policy: conservative
+  audit: true                 # 每次合并记录依据（信号/相似度/原文），可用 --audit 复核
+  # 合并判定：同一"事项"在不同素材中重复出现时合并为一条
+  match_by:
+    - id: ticket            # 工单号完全一致 → 必定同一事项（最强信号）
+      weight: 1.0
+    - id: deliverable       # 交付物名一致（仍需相似度背书，避免"看板"这类泛词过度合并）
+      weight: 0.8
+    - id: similarity        # 文本相似度
+      weight: 0.5
+      threshold: 0.72       # 0~1，Jaccard 阈值，越高越严格
+      containment_threshold: 0.55  # 重叠系数阈值：短事项被长事项覆盖的程度
+      algorithm: char_ngram  # char_ngram | jaccard | token_set
+      ngram: 2               # 中文建议 2：同 Topic 不同措辞（"登录崩溃问题已修复" vs "修复登录页..崩溃问题"）也能合并
+  # 合并时保留哪一条：
+  #   richest   = 取信息量最全的表述（默认；含最多量化数据/状态词/ID）
+  #   latest    = 取素材里时间最新的
+  #   concat    = 拼接（会变长，受 max_lines_per_item 限制，不推荐）
+  merge_policy: richest
+  keep_identifiers: true      # 合并后保留工单号/交付物名等可核对标识
+  # 合并后若不同素材的状态相互矛盾 → 触发铁律 R7（归入〖风险与阻塞〗）
+  on_status_conflict: mark_conflict
+  # =====================================================================
+  # 状态护栏（R8 的加强项，2026-10-13 修复 D2）：
+  #   弱信号（共享交付物 / 文本相似度 / 重叠系数）命中、但两条的**状态明确不同**时，
+  #   **不合并、保留两条**。
+  #   为什么：同话题不同状态多半是**两件不同的事**（一件在做、一件已完成）。
+  #   强行合并会造出"伪状态冲突"——条目被从〖进行中〗〖本周完成〗抽走塞进〖风险与阻塞〗，
+  #   还会连带把〖下周计划〗的条目吸走，使该模块塌成"待确认"。
+  #   代价：极限情况下少数真重复项会漏合（符合 R8："漏合用户手工并一下即可"）。
+  # 例外：exempt_signals 里的**强标识**说明确实是同一实体，状态矛盾是 R7 的真实冲突，
+  #   必须合并后暴露（聊天说完成、工单仍未关闭 → 正是要报出来的场景）。
+  # =====================================================================
+  status_guard:
+    enabled: true
+    exempt_signals: [ticket]
+
+# ---- 五、条目压缩（保证 ≤ max_lines_per_item 行）----
+compress:
+  enabled: true
+  strategy: drop_examples_first   # 先删举例/修饰，再删背景，最后截断（绝不删数字与占位）
+  max_chars_per_item: 120
+  never_drop: [percent, date, version, count, ticket, money, missing_marker]

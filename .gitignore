@@ -1,0 +1,19 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tgz
+
+# Python 缓存（随包流水线运行时产生）
+pipeline/**/__pycache__/
+pipeline/**/*.pyc
+
+# 本地环境与日志
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.local
+
+# 本机 profile 补丁与个人配置（不应进入公开仓库）
+cordis.patch.local.yml
+*.local.yml

@@ -1,0 +1,83 @@
+# =============================================================
+# mimetics-dsh-weekly-report — 模块定义（输出骨架）
+# 顺序 = 输出顺序。铁律 R5：这里定义了几个模块，输出就只能有几个。
+# =============================================================
+
+# 全局约束
+constraints:
+  fixed_sections: true        # true = 输出模块严格等于下面 sections 列表，不得增删
+  allow_rename: false         # true = 允许按 template 重命名标题（默认不推荐）
+  keep_empty_section: true    # 空模块保留标题 + empty_item（铁律 R3）
+
+# 空模块时写入的条目（铁律 R2/R3 的唯一出口：**只有模块完全为空**才写占位；
+# 有内容时绝不追加任何占位符 —— 见缺陷 D4）。
+# 文案统一为「- 待确认」（缺陷 D6 方案 B，2026-10-13 拍板）：四个模块一致，
+# 既满足 R4「无计划不自行推导」，也不再出现「（待补充）」与「待确认」两种并存。
+# ⚠️ 此后 `input.missing_data_placeholder（待补充）` 仅供诊断/R6 排除识别，不再写进正文。
+empty_item: "- 待确认"
+
+# -------------------------------------------------------------
+# 每个模块的三个"路由/契约"键（全部由代码按配置读取，代码里没有业务名词）：
+#
+#   accept_status    — 该模块接收哪些状态（分类结果 → 模块的唯一依据）
+#   route_status     — **强路由信号**：素材里出现本模块的分节标题或行内标签时，
+#                      直接把其下的事项路由到本模块（对应 heading_aliases）。
+#                      强路由优先于关键词判定，唯一例外是 blocked ——
+#                      受阻信息永不被压制（与 classify.future_gate 同一原则）。
+#   heading_aliases  — 触发强路由的标签词（分节标题 / 行内标签，两者共用一份）。
+#                      注意：title 去掉 〖〗 后自动算作一个别名，无需重复写。
+#                      行内标签形如「下周计划：完成风控规则配置」——**既路由、又从输出里剥离**。
+#   require_metrics  — **诊断门槛**（缺陷 D4 后语义）：true = 本模块的条目应当带**数值型**数据，
+#                      缺则只在 warnings（诊断折叠块）里提示 —— **绝不写进正文**。
+#                      正文里的占位符**只允许出现在"模块完全为空"时**（与 R3 同一处出口），
+#                      文案取本模块的 empty_item（现全模块统一为「- 待确认」）。
+#                      有内容的模块里每条都必须是真实内容。
+#                      数值型口径见 extract.yaml → extraction.numeric_types。
+# -------------------------------------------------------------
+
+sections:
+  - id: completed
+    title: 〖本周完成〗
+    order: 1
+    # 该模块接收哪些状态的条目（对应 classify.yaml 的 status）
+    accept_status: [completed]
+    route_status: completed
+    heading_aliases: ["本周完成", "已完成", "本周完成事项"]
+    entry_hint: 事项描述，含量化数据
+    empty_item: "- 待确认"
+    # 完成项是对已发生事实的陈述，不做"缺数据"提示
+    require_metrics: false
+
+  - id: in_progress
+    title: 〖进行中〗
+    order: 2
+    accept_status: [in_progress]
+    route_status: in_progress
+    heading_aliases: ["进行中", "本周进行中", "进行中事项", "在做"]
+    entry_hint: 事项描述，含预计节点（如素材有）
+    empty_item: "- 待确认"
+    require_metrics: false
+
+  - id: blocked
+    title: 〖风险与阻塞〗
+    order: 3
+    accept_status: [blocked, conflict]
+    route_status: blocked
+    heading_aliases: ["风险与阻塞", "风险", "阻塞", "风险与问题", "问题与风险", "待确认"]
+    entry_hint: 风险/阻塞描述（缺失数据时在诊断里提示补数，正文不追加占位）
+    empty_item: "- 待确认"
+    # 风险/阻塞是需要数据背书的模块 → 缺数值支撑时进诊断提示（不写正文）
+    require_metrics: true
+
+  - id: next_plan
+    title: 〖下周计划〗
+    order: 4
+    accept_status: [planned]
+    route_status: planned
+    heading_aliases: ["下周计划", "下周安排", "下周待办", "下周计划事项", "下阶段计划"]
+    entry_hint: 计划事项，或：待确认
+    # 注意：本模块的行首标记来自 template.md 的 next_plan_placeholder，
+    # 不取自素材。不做任何推导（铁律 R4）。
+    empty_item: "- 待确认"
+    keep_empty_section: true
+    require_metrics: false
