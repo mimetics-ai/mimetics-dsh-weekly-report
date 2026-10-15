@@ -17,3 +17,7 @@ Thumbs.db
 # 本机 profile 补丁与个人配置（不应进入公开仓库）
 cordis.patch.local.yml
 *.local.yml
+
+# npm 密钥文件（防止误提交 token）
+.npmrc
+.npmrc.*
