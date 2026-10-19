@@ -3,9 +3,7 @@
 > **装上后，在 Harness 对话框说一句「帮我生成本周周报」，就能拿到固定四模块的 Markdown 周报**
 > （〖本周完成〗〖进行中〗〖风险与阻塞〗〖下周计划〗）——由 `generate_weekly_report` 工具驱动内置流水线生成。
 
-<!-- 收录后把下面这行换成官方徽章（替换 your-owner / your-plugin-slug）：
-[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/your-owner/your-plugin-slug)
--->
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/mimetics-ai/mimetics-dsh-weekly-report)
 
 [![npm](https://img.shields.io/npm/v/mimetics-dsh-weekly-report.svg)](https://www.npmjs.com/package/mimetics-dsh-weekly-report)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
