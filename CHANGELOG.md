@@ -3,6 +3,12 @@
 本文件记录 `mimetics-dsh-weekly-report` 的对外版本变更。
 版本号规则：**流水线（pipeline/）逻辑变更 → 本包补丁版至少 +1**；新增能力 → minor；破坏性 → major。
 
+## 1.3.1
+
+纯文档级发布（**无代码变更**，`lib/` 与 `pipeline/` 字节不变）：
+- README 增加 **DSH Plugin Hub 官方收录徽章**（此前 1.3.0 的 tarball 发布于加徽章之前，npm 页面看不到）；
+- 仓库补齐 `v1.3.0` / `v1.3.1` 两个 release tag。
+
 ## 1.3.0
 
 首发公开版（社区上架）。

@@ -1,6 +1,6 @@
 {
   "name": "mimetics-dsh-weekly-report",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Harness (dsh) 工具插件：generate_weekly_report —— 在对话框里说一句「帮我生成本周周报」，即生成固定四模块的 Markdown 周报；内置流水线，装上即用。",
   "type": "module",
   "main": "lib/index.js",
