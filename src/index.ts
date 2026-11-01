@@ -20,6 +20,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, statSync } from '
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { report, reportInstall, type TelemetryOptions } from './telemetry.js'
 
 /** 稳定 Cordis 插件名（出现在配置与日志中）。 */
 export const name = 'weekly-report'
@@ -35,6 +36,13 @@ export interface WeeklyReportConfig {
   projectRoot?: string
   /** 单次 Python 调用的超时（毫秒）。 */
   timeoutMs?: number
+  /**
+   * 是否上报匿名调用统计。**缺省关闭**（不产生任何网络请求）；
+   * 设为 true，或设置环境变量 `WEEKLY_REPORT_TELEMETRY=1` 才开启。
+   */
+  telemetryEnabled?: boolean
+  /** 匿名统计收集端地址。缺省取环境变量 `WEEKLY_REPORT_TELEMETRY_URL`，再回落内置常量。 */
+  telemetryUrl?: string
 }
 
 /** 包内自带的流水线目录（v1.3.0 起随包分发）：装上即用，不需要本机另有流水线目录。 */
@@ -122,6 +130,38 @@ interface RunOutcome {
   stderr: string
   spawnError: NodeJS.ErrnoException | null
   timedOut: boolean
+}
+
+/** 一次成功生成的产物与退出码（退出码 2 = R0 闸门，业务上也算成功）。 */
+interface GenerateResult {
+  markdown: string
+  exitCode: number | null
+}
+
+/**
+ * 把内部异常归类成稳定的错误码，供统计聚合使用。
+ *
+ * 只上报**分类**，不上报错误原文——原文里含用户目录、素材路径等隐私信息。
+ */
+function classifyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('超时')) return 'timeout'
+  if (message.includes('未找到可用的 Python 解释器')) return 'python_missing'
+  if (message.includes('Python 解释器不可用')) return 'python_invalid'
+  if (message.includes('projectRoot 配置无效') || message.includes('未找到周报流水线')) {
+    return 'pipeline_root'
+  }
+  if (message.includes('未找到流水线配置')) return 'config_missing'
+  if (message.includes('素材文件不存在') || message.includes('是空字符串')) return 'material_invalid'
+  if (message.includes('Python 退出码 1')) return 'pipeline_error'
+  if (message.includes('没有任何 Markdown 输出')) return 'empty_output'
+  if (message.includes('无法启动 Python 进程')) return 'spawn_error'
+  return 'other'
+}
+
+/** 从插件配置里抽出上报参数（配置项与环境变量由 telemetry 模块统一裁决）。 */
+function telemetryOptions(config: WeeklyReportConfig): TelemetryOptions {
+  return { enabled: config.telemetryEnabled, endpoint: config.telemetryUrl }
 }
 
 /** 命令是否可执行（交给 PATH 解析，不做任何绝对路径假设）。 */
@@ -260,14 +300,15 @@ function runProcess(
  *
  * 退出码语义沿用 `pipeline.py` 的约定：
  *   0 = 正常产出；2 = R0 闸门（无可用素材，stdout 是一句提示）；1 = 参数或内部错误。
- * 退出码 1 视为失败并原文抛出；0/2 都算「业务上成功」，返回 stdout。
+ * 退出码 1 视为失败并原文抛出；0/2 都算「业务上成功」，返回 stdout 与退出码
+ * （调用方需要退出码来区分「生成了周报」和「闸门提示」，统计上也依赖这个区分）。
  */
 async function generate(
   materials: string[],
   outPath: string | undefined,
   config: WeeklyReportConfig,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<GenerateResult> {
   const projectRoot = resolveProjectRoot(config)
   const python = resolvePython(config)
   const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -355,9 +396,12 @@ async function generate(
   const notes: string[] = []
   if (outcome.stderr.trim()) notes.push(outcome.stderr.trim())
   if (spilled.length > 0) notes.push(`[plugin] 已将 ${spilled.length} 项素材原文落盘为临时文件后交给流水线。`)
-  if (notes.length === 0) return markdown
+  if (notes.length === 0) return { markdown, exitCode: outcome.code }
 
-  return `${markdown}\n\n---\n\n<details>\n<summary>流水线诊断信息（stderr）</summary>\n\n\`\`\`\n${notes.join('\n')}\n\`\`\`\n\n</details>\n`
+  return {
+    markdown: `${markdown}\n\n---\n\n<details>\n<summary>流水线诊断信息（stderr）</summary>\n\n\`\`\`\n${notes.join('\n')}\n\`\`\`\n\n</details>\n`,
+    exitCode: outcome.code,
+  }
 }
 
 /**
@@ -395,7 +439,39 @@ export function apply(ctx: any, config: WeeklyReportConfig = {}): void {
       timeoutMs: DEFAULT_TIMEOUT_MS,
       isConcurrencySafe: () => true,
       async execute(args, exec) {
-        return generate(args.materials as string[], args.outPath as string | undefined, config, exec.signal)
+        const startedAt = Date.now()
+        const materials = (args.materials as string[] | undefined) ?? []
+        const version = readPluginVersion()
+        const options = telemetryOptions(config)
+        try {
+          const result = await generate(materials, args.outPath as string | undefined, config, exec.signal)
+          // 统计：只报结局、耗时、素材条数；不报素材内容、路径、错误原文。
+          // report() 是同步返回的：不等回包，失败静默，绝不影响本次结果。
+          report(
+            {
+              event: 'call',
+              version,
+              outcome: result.exitCode === 2 ? 'gate' : 'ok',
+              durationMs: Date.now() - startedAt,
+              materials: materials.length,
+            },
+            options,
+          )
+          return result.markdown
+        } catch (error) {
+          report(
+            {
+              event: 'call',
+              version,
+              outcome: 'error',
+              durationMs: Date.now() - startedAt,
+              materials: materials.length,
+              errorKind: classifyError(error),
+            },
+            options,
+          )
+          throw error
+        }
       },
     }),
   )
@@ -412,6 +488,10 @@ export function apply(ctx: any, config: WeeklyReportConfig = {}): void {
     `[weekly-report] generate_weekly_report 已注册 | ` +
       `plugin v${readPluginVersion()} | pipeline v${readPipelineVersion(resolvedRoot)}`,
   )
+
+  // 匿名统计：同一台机器只在首次加载时记一次 install（靠标记文件收敛），
+  // 未开启（默认）时为空操作，不产生任何网络请求。
+  reportInstall(readPluginVersion(), telemetryOptions(config))
 
   if (process.env.WEEKLY_REPORT_DEBUG === '1') {
     console.error(

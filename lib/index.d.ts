@@ -10,6 +10,13 @@ export interface WeeklyReportConfig {
     projectRoot?: string;
     /** 单次 Python 调用的超时（毫秒）。 */
     timeoutMs?: number;
+    /**
+     * 是否上报匿名调用统计。**缺省关闭**（不产生任何网络请求）；
+     * 设为 true，或设置环境变量 `WEEKLY_REPORT_TELEMETRY=1` 才开启。
+     */
+    telemetryEnabled?: boolean;
+    /** 匿名统计收集端地址。缺省取环境变量 `WEEKLY_REPORT_TELEMETRY_URL`，再回落内置常量。 */
+    telemetryUrl?: string;
 }
 /**
  * 解析流水线根目录。顺序（v1.3.0 起，四级）：

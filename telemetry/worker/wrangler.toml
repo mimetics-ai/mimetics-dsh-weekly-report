@@ -1,0 +1,17 @@
+# 周报插件匿名调用统计 · 收集端
+#
+# 部署步骤见同目录 README.md。
+# STATS_KEY 不要写在这里，用 `wrangler secret put STATS_KEY` 存为加密变量。
+
+name = "mimetics-telemetry"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Free 套餐的 Worker 足够：10 万次请求/天，D1 500 万行读/天、10 万行写/天。
+# 按当前量级（每天几十次调用）占用不到 0.1%。
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mimetics-telemetry"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
