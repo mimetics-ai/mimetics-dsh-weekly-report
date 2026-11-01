@@ -87,15 +87,16 @@ console.log(`收集端(假) : ${ENDPOINT}`)
 console.log(`实例目录   : ${TELEMETRY_HOME}`)
 console.log('')
 
-// ── 1. 未配置收集端：开关默认开着，但一个请求都不许发 ─────────────────
-console.log('[1] 未配置收集端时不应有任何网络请求（开关默认开启）')
+// ── 1. 默认关闭：只配地址、不开开关，一个请求都不许发 ─────────────────
+console.log('[1] 默认关闭：只配置地址也不应发任何请求')
 delete process.env.WEEKLY_REPORT_TELEMETRY
-delete process.env.WEEKLY_REPORT_TELEMETRY_URL
+// 故意给上地址：验证「地址 ≠ 开启」，开启必须显式表态。
+process.env.WEEKLY_REPORT_TELEMETRY_URL = ENDPOINT
 received.length = 0
 const offTool = mount()
 await offTool.execute({ materials: ['C:\\__not_here__\\a.md'] }, {}).catch(() => {})
 await settle()
-check('无地址时收到 0 条事件', received.length === 0, `实得 ${received.length}`)
+check('默认关闭时收到 0 条事件（即便配了地址）', received.length === 0, `实得 ${received.length}`)
 
 // ── 2. 开启后 install 每台机器只发一次 ─────────────────────────────────
 console.log('\n[2] 开启后 install 事件收敛为「每台机器一次」')
@@ -117,7 +118,7 @@ received.length = 0
 const optedOut = mount({ telemetryEnabled: false })
 await optedOut.execute({ materials: ['C:\\__not_here__\\b.md'] }, {}).catch(() => {})
 await settle()
-check('显式关闭后即使配了地址也不发', received.length === 0, `实得 ${received.length}`)
+check('配置关闭优先于环境变量开启', received.length === 0, `实得 ${received.length}`)
 
 // ── 3. 失败路径：照旧抛错 + 上报失败归类 ───────────────────────────────
 console.log('\n[3] 失败路径：错误不被吞，同时上报可归类的失败')
