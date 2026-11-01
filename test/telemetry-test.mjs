@@ -13,7 +13,7 @@
  *   5. 收集端慢到 1 秒时，execute 的耗时不受影响（证明没有 await 上报）。
  */
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -190,6 +190,36 @@ if (!pythonOk) {
   const blocked = Date.now() - t0
   check(`execute 耗时未受 1000ms 响应延迟影响`, blocked < 1000, `实得 ${blocked} ms`)
   responseDelayMs = 0
+
+  // ── 6. 本地留痕：默认开启、纯本地、可关闭 ───────────────────────────────
+  console.log('\n[6] 本地调用日志 events.jsonl（不联网、可关闭）')
+  const logFile = join(TELEMETRY_HOME, 'weekly-report', 'events.jsonl')
+  check('日志文件已生成', existsSync(logFile), logFile)
+  const lines = existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').filter(Boolean) : []
+  check('至少写入一条事件', lines.length >= 1, `${lines.length} 行`)
+
+  let parsed = []
+  try {
+    parsed = lines.map((l) => JSON.parse(l))
+  } catch {
+    parsed = []
+  }
+  check('每行都是合法 JSON', parsed.length === lines.length, `${parsed.length}/${lines.length}`)
+
+  const allowed = new Set([
+    'schema', 'instance', 'ts', 'event', 'version', 'node', 'os',
+    'outcome', 'duration_ms', 'materials', 'error_kind', 'iso',
+  ])
+  const stray = [...new Set(parsed.flatMap((e) => Object.keys(e)).filter((k) => !allowed.has(k)))]
+  check('只含白名单字段', stray.length === 0, stray.length ? `多余字段 ${stray.join(',')}` : '字段干净')
+  check('不含素材正文', !JSON.stringify(parsed).includes('补充看板'), '无正文泄漏')
+
+  const linesBefore = lines.length
+  process.env.WEEKLY_REPORT_LOCAL_LOG = '0'
+  await tool.execute({ materials: ['第三轮：验证可关闭本地日志。'] }, {})
+  process.env.WEEKLY_REPORT_LOCAL_LOG = ''
+  const linesAfter = readFileSync(logFile, 'utf8').split('\n').filter(Boolean).length
+  check('WEEKLY_REPORT_LOCAL_LOG=0 时不再写入', linesAfter === linesBefore, `${linesBefore} → ${linesAfter}`)
 }
 
 console.log('\n' + '='.repeat(72))
