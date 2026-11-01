@@ -23,11 +23,11 @@ export interface TelemetryEvent {
     errorKind?: string;
 }
 /**
- * 判定是否启用上报：显式配置 > 环境变量 > **默认开启**。
+ * 判定是否启用上报：显式配置 > 环境变量 > **默认关闭**。
  *
- * 「默认开启」是产品决定：插件跑在用户本机，不主动上报就永远没有调用数据。
- * 代价是必须把这件事写进 README 并保证可关闭——`WEEKLY_REPORT_TELEMETRY=0`
- * 或配置 `telemetryEnabled: false` 即为完全静默。
+ * 默认关闭是对外承诺：插件不主动联网，除非使用者自己打开。
+ * 只有 `enabled: true`，或 `WEEKLY_REPORT_TELEMETRY=1/true/on/yes`，才算打开；
+ * 其余情况（含未设置）一律视为关闭。
  *
  * 注意：开关为真但收集端地址为空时，仍然一个请求都不发（见 report）。
  */
