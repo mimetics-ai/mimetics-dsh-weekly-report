@@ -40,7 +40,10 @@ export declare function resolveEndpoint(options?: TelemetryOptions): string;
  */
 export declare function getInstanceId(): string;
 /**
- * 上报一条事件。**同步返回**，不返回 Promise——调用方无法（也不该）等待它。
+ * 记录一条事件。**同步返回**，不返回 Promise——调用方无法（也不该）等待它。
+ *
+ * 顺序：先写本地 JSONL（默认开启，纯本地），再判断是否联网上报（默认关闭）。
+ * 因此「默认零网络请求」的承诺不变，但使用者在本地始终有数可查。
  */
 export declare function report(event: TelemetryEvent, options?: TelemetryOptions): void;
 /**

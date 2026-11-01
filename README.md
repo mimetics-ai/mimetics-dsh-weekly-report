@@ -75,6 +75,7 @@ dsh plugin --profile web add github:mimetics-ai/mimetics-dsh-weekly-report
 | **运行依赖** | 本机需有 **Python 3.9+**（实测 3.13 / 3.15）。插件通过 `execFile` 调用 Python 运行内置流水线；未找到解释器时会给出明确的配置指引 |
 | **文件读写** | 只读写**包内流水线目录**与插件自己的临时目录；若你在配置里显式给出 `projectRoot`，则读写该目录下的 `src/`、`config/` |
 | **网络** | **默认零网络请求**。只有**显式开启**（`telemetryEnabled: true` 或 `WEEKLY_REPORT_TELEMETRY=1`）**且**填了收集端地址时，每次调用才会发出**一条**匿名事件；**素材内容、文件路径、错误原文永不外传**。详见 [`telemetry/README.md`](./telemetry/README.md) |
+| **本地调用日志** | 每次调用往 `~/.mimetics/weekly-report/events.jsonl` 追加**一行**（与匿名事件同字段，**纯本地、不上传**），供你自己看用量；`WEEKLY_REPORT_LOCAL_LOG=0` 可关闭 |
 | **数据** | 素材只在本地进程间传递，产出物由你自行决定保存位置 |
 | **权限** | 仅注册一个工具 `generate_weekly_report`，不申请额外系统权限、不执行生命周期脚本 |
 
@@ -90,9 +91,10 @@ dsh plugin --profile web add github:mimetics-ai/mimetics-dsh-weekly-report
 | `telemetryEnabled` | `WEEKLY_REPORT_TELEMETRY` | `false`（关闭） | 是否上报匿名调用统计；设为 `true` / `1` 开启 |
 | `telemetryUrl` | `WEEKLY_REPORT_TELEMETRY_URL` | 空（不发请求） | 匿名统计收集端地址；**开关打开且地址非空才生效** |
 | — | `WEEKLY_REPORT_DEBUG` | 未设置 | 设为 `1` 打印挂载与版本日志 |
+| — | `WEEKLY_REPORT_LOCAL_LOG` | 开启（写本地文件） | 设为 `0` / `false` / `off` 关闭本地调用日志 |
+| — | `WEEKLY_REPORT_TELEMETRY_HOME` | `~/.mimetics` | 重定向实例 ID 与本地日志的存放根目录 |
 
 ## 匿名调用统计（默认关闭，需显式开启）
-
 插件跑在你的电脑上，任何第三方（包括 GitHub 与 npm）都看不到「调用」这件事——它们只能看到下载和 clone。如果你想观察「用了多少次、失败在哪一步」，可以打开插件自带的匿名统计。
 
 **默认关闭**：未显式开启时不发任何请求，代码路径等同于空实现。
@@ -120,6 +122,48 @@ wrangler deploy                                # 记下输出的 https://<name>.
 
 > 若将来要改成**对所有用户默认开启**（不需要用户配置）：需要同时修改 `src/telemetry.ts` 的 `DEFAULT_ENDPOINT` 与 `isTelemetryEnabled` 的默认返回值，并同步修改本节与「权限与风险 → 网络」的对外表述——这是承诺变更，不能只改代码。
 
+
+## 本地调用日志（默认开启，纯本地）
+
+**不需要任何收集端，你也能知道自己用了多少次。** 每次 `generate_weekly_report` 执行后，插件往本机追加一行：
+
+```
+~/.mimetics/weekly-report/events.jsonl
+```
+
+一行一条 JSON，字段与上面的匿名事件**完全相同**（版本、结局、耗时、素材条数、失败归类、Node 主版本、系统、匿名实例 ID）——**不含素材内容、文件路径、错误原文，也不产生任何网络请求**。
+
+**看统计**（包内自带脚本，零依赖）：
+
+```bash
+npx mimetics-dsh-weekly-report-stats      # 或在本包目录：npm run stats / node scripts/local-stats.mjs
+```
+
+输出示例：
+
+```
+本地调用统计（全部）
+  调用次数   5
+  安装次数   1
+  成功率     40%   （ok 2 / gate 0 / error 3）
+  耗时       avg 296ms   p50 125ms   p90 629ms
+  失败归类   material_invalid×3
+
+  按日调用：
+    2026-11-01  █████ 5
+```
+
+| 想做什么 | 怎么做 |
+|---|---|
+| 只看最近 7 天 | `node scripts/local-stats.mjs --days 7` |
+| 拿 JSON 二次处理 | `node scripts/local-stats.mjs --json` |
+| 换存放位置 | 设 `WEEKLY_REPORT_TELEMETRY_HOME=<目录>` |
+| 关掉本地日志 | 设 `WEEKLY_REPORT_LOCAL_LOG=0` |
+| 删掉历史 | 直接删 `~/.mimetics/weekly-report/events.jsonl` |
+
+日志超过 2 MB 会自动轮转一份为 `events.jsonl.1`，不会无限增长；写盘失败（只读环境、磁盘满）一律静默跳过，绝不影响周报生成。
+
+> 这一步与「匿名调用统计」是两件独立的事：**本地日志默认开、不发网络**；**远端上报默认关、发到你自己配的地址**。国内访问 `*.workers.dev` 常被 DNS 污染阻断，若只关心自己用量，用本地日志即可，无需部署收集端。
 
 ## 兼容性
 
