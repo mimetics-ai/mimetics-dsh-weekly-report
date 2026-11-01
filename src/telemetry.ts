@@ -7,9 +7,9 @@
  *
  *   1. **绝不阻塞主流程**：调用即返回，不等回包；单次请求 800ms 超时；
  *      任何异常（DNS、TLS、超时、5xx）一律静默吞掉，绝不影响周报生成。
- *   2. **默认开启、可一键关闭**：默认上报（插件跑在用户本机，不主动上报就永远没有调用数据）。
- *      但**收集端地址为空时仍然一个请求都不发**——地址才是真正生效的开关。
- *      关闭方式：`WEEKLY_REPORT_TELEMETRY=0` 或配置 `telemetryEnabled: false`。
+ *   2. **默认关闭**：必须**同时**满足「开关打开」与「地址非空」才会发一个请求；
+ *      默认状态下零网络请求，与 README 的对外承诺一致。
+ *      开启：`WEEKLY_REPORT_TELEMETRY=1`（或配置 `telemetryEnabled: true`）+ 配置 `telemetryUrl`。
  *   3. **只上报白名单字段**：不含素材内容、文件路径、用户名、机器名、IP、错误原文。
  *
  * 匿名实例 ID：本机首次运行时随机生成 UUID v4，取其 SHA-256 前 16 位，
@@ -22,11 +22,11 @@ import { homedir, platform } from 'node:os'
 import { dirname, join } from 'node:path'
 
 /**
- * 内置收集端地址。
+ * 内置收集端地址。默认空串 = 不上报。
  *
- * **这里是唯一的生效开关**：留空则无论 enabled 为何都不发送任何请求。
+ * 与 `isTelemetryEnabled` 是**「与」的关系**：开关打开 **且** 地址非空，才会发出请求。
  * 部署好收集端后把域名填进来（形如 `https://xxx.workers.dev/v1/events`），
- * 全部用户即刻开始上报；也可由用户用 `WEEKLY_REPORT_TELEMETRY_URL` 覆盖。
+ * 也可由用户用 `WEEKLY_REPORT_TELEMETRY_URL` 覆盖。
  */
 const DEFAULT_ENDPOINT = ''
 
@@ -88,15 +88,15 @@ export interface TelemetryEvent {
 /** 缓存实例 ID，避免每次调用都读盘。 */
 let cachedInstanceId: string | null = null
 
-/** 「已配置收集端」的提示只打一次，避免每次调用都刷日志。 */
+/** 「开关开着却没配地址」的提示只打一次，避免每次调用都刷日志。 */
 let warnedMissingEndpoint = false
 
 /**
- * 判定是否启用上报：显式配置 > 环境变量 > **默认开启**。
+ * 判定是否启用上报：显式配置 > 环境变量 > **默认关闭**。
  *
- * 「默认开启」是产品决定：插件跑在用户本机，不主动上报就永远没有调用数据。
- * 代价是必须把这件事写进 README 并保证可关闭——`WEEKLY_REPORT_TELEMETRY=0`
- * 或配置 `telemetryEnabled: false` 即为完全静默。
+ * 默认关闭是对外承诺：插件不主动联网，除非使用者自己打开。
+ * 只有 `enabled: true`，或 `WEEKLY_REPORT_TELEMETRY=1/true/on/yes`，才算打开；
+ * 其余情况（含未设置）一律视为关闭。
  *
  * 注意：开关为真但收集端地址为空时，仍然一个请求都不发（见 report）。
  */
@@ -104,8 +104,8 @@ export function isTelemetryEnabled(options: TelemetryOptions = {}): boolean {
   if (options.enabled === false) return false
   if (options.enabled === true) return true
   const flag = process.env.WEEKLY_REPORT_TELEMETRY?.trim().toLowerCase()
-  if (flag === '0' || flag === 'false' || flag === 'off' || flag === 'no') return false
-  return true
+  if (flag === '1' || flag === 'true' || flag === 'on' || flag === 'yes') return true
+  return false
 }
 
 /** 解析收集端地址：显式配置 > 环境变量 > 内置常量。空串表示不发送。 */
