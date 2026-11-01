@@ -74,7 +74,7 @@ dsh plugin --profile web add github:mimetics-ai/mimetics-dsh-weekly-report
 |---|---|
 | **运行依赖** | 本机需有 **Python 3.9+**（实测 3.13 / 3.15）。插件通过 `execFile` 调用 Python 运行内置流水线；未找到解释器时会给出明确的配置指引 |
 | **文件读写** | 只读写**包内流水线目录**与插件自己的临时目录；若你在配置里显式给出 `projectRoot`，则读写该目录下的 `src/`、`config/` |
-| **网络** | **未配置收集端地址时零网络请求**。开启匿名调用统计（默认开启，见下节）且填入了收集端地址后，每次调用发出**一条**匿名事件；**素材内容、文件路径、错误原文永不外传**。不需要可一键关闭，详见 [`telemetry/README.md`](./telemetry/README.md) |
+| **网络** | **默认零网络请求**。只有**显式开启**（`telemetryEnabled: true` 或 `WEEKLY_REPORT_TELEMETRY=1`）**且**填了收集端地址时，每次调用才会发出**一条**匿名事件；**素材内容、文件路径、错误原文永不外传**。详见 [`telemetry/README.md`](./telemetry/README.md) |
 | **数据** | 素材只在本地进程间传递，产出物由你自行决定保存位置 |
 | **权限** | 仅注册一个工具 `generate_weekly_report`，不申请额外系统权限、不执行生命周期脚本 |
 
@@ -87,22 +87,24 @@ dsh plugin --profile web add github:mimetics-ai/mimetics-dsh-weekly-report
 | `pythonPath` | `WEEKLY_REPORT_PYTHON` | 依次探测 PATH 上的 `python` / `python3` / `py` | Python 解释器：绝对路径或命令名 |
 | `projectRoot` | `WEEKLY_REPORT_PROJECT_ROOT` | **包内 `pipeline/` 目录** | 流水线根目录（含 `src/pipeline.py` 与 `pipeline/config/config.json`） |
 | `timeoutMs` | — | `120000` | 单次调用超时 |
-| `telemetryEnabled` | `WEEKLY_REPORT_TELEMETRY` | `true`（开启） | 是否上报匿名调用统计；设为 `false` / `0` 关闭 |
-| `telemetryUrl` | `WEEKLY_REPORT_TELEMETRY_URL` | 空（不发请求） | 匿名统计收集端地址；**留空则一个请求都不发** |
+| `telemetryEnabled` | `WEEKLY_REPORT_TELEMETRY` | `false`（关闭） | 是否上报匿名调用统计；设为 `true` / `1` 开启 |
+| `telemetryUrl` | `WEEKLY_REPORT_TELEMETRY_URL` | 空（不发请求） | 匿名统计收集端地址；**开关打开且地址非空才生效** |
 | — | `WEEKLY_REPORT_DEBUG` | 未设置 | 设为 `1` 打印挂载与版本日志 |
 
-## 匿名调用统计（默认开启，可关闭）
+## 匿名调用统计（默认关闭，需显式开启）
 
-插件跑在你的电脑上，任何第三方（包括 GitHub 与 npm）都看不到「调用」这件事——它们只能看到下载和 clone。所以插件会自己发一条极简事件，用来回答「用了多少次、失败在哪一步、哪个版本在跑」。
+插件跑在你的电脑上，任何第三方（包括 GitHub 与 npm）都看不到「调用」这件事——它们只能看到下载和 clone。如果你想观察「用了多少次、失败在哪一步」，可以打开插件自带的匿名统计。
+
+**默认关闭**：未显式开启时不发任何请求，代码路径等同于空实现。
 
 **上报的字段**：插件版本、结局（ok / gate / error）、耗时毫秒、素材条数、失败归类、Node 主版本、操作系统、匿名实例 ID。
 **绝不上报**：素材内容、文件路径、用户名、机器名、IP、错误原文。
 
 匿名实例 ID 是本机首次运行随机生成的 UUID 之 SHA-256 前 16 位，与账号、硬件、IP 无关，只用于把同一台机器的多次调用归并成「一个使用者」。删除 `~/.mimetics/weekly-report/instance-id` 即换新 ID。
 
-**一个请求都不发的两种情况**：① 收集端地址为空（默认就是空，所以默认状态下零网络请求）；② 关闭统计。
+**发请求需同时满足两个条件**：① 统计开关打开（默认关闭）；② 收集端地址非空（默认为空）。任一不满足即零请求。
 
-**关闭方式**（任选其一）：插件配置 `telemetryEnabled: false`，或环境变量 `WEEKLY_REPORT_TELEMETRY=0`。
+**开启方式**：配置 `telemetryEnabled: true` + `telemetryUrl`，或环境变量 `WEEKLY_REPORT_TELEMETRY=1` + `WEEKLY_REPORT_TELEMETRY_URL`。
 
 自建收集端与看板（Cloudflare Worker + D1，免费额度足够）：
 
@@ -114,8 +116,9 @@ wrangler secret put STATS_KEY                  # 看板访问口令，随便生�
 wrangler deploy                                # 记下输出的 https://<name>.<subdomain>.workers.dev
 ```
 
-然后把插件指向它：`WEEKLY_REPORT_TELEMETRY_URL=https://<name>.<subdomain>.workers.dev/v1/events`（或写进配置 `telemetryUrl`）。打开该域名根路径即可看看板。
-维护者若希望**所有用户**默认上报，把地址填进 `src/telemetry.ts` 的 `DEFAULT_ENDPOINT` 即可。
+然后把插件指向它：`WEEKLY_REPORT_TELEMETRY_URL=https://<name>.<subdomain>.workers.dev/v1/events`，并同时设 `WEEKLY_REPORT_TELEMETRY=1`（或配置 `telemetryUrl` + `telemetryEnabled: true`）。打开该域名根路径即可看看板。
+
+> 若将来要改成**对所有用户默认开启**（不需要用户配置）：需要同时修改 `src/telemetry.ts` 的 `DEFAULT_ENDPOINT` 与 `isTelemetryEnabled` 的默认返回值，并同步修改本节与「权限与风险 → 网络」的对外表述——这是承诺变更，不能只改代码。
 
 
 ## 兼容性
