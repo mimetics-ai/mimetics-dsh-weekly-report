@@ -17,7 +17,7 @@
 
 **匿名实例 ID**：本机首次运行随机生成 UUID v4，取 SHA-256 前 16 位，存于 `~/.mimetics/weekly-report/instance-id`。它与账号、硬件指纹、IP 均无关联，唯一用途是把同一台机器的多次调用归并成「一个使用者」，从而算出活跃实例数与人均调用量。删除该文件即换新 ID。
 
-**默认开启，地址为空即静默**：开关默认打开——插件跑在用户本机，不主动上报就永远没有调用数据；但**收集端地址为空时一个请求都不发**。所以「默认状态零网络请求」与「默认开启统计」并不矛盾，地址才是最终生效开关。
+**默认关闭**：未显式开启时不发任何请求，代码路径等同于空操作。开启后仍需收集端地址非空——两者是**「与」的关系**，只有开关没地址、或只有地址没开关，都不会发出一个请求。
 
 ## 二、部署收集端（约 10 分钟）
 
@@ -50,13 +50,14 @@ curl -s "$BASE/stats?key=$KEY"     # 期望：totals.calls ≥ 1
 open "$BASE/?key=$KEY"             # 看板
 ```
 
-## 三、让上报真正生效
+## 三、开启上报
 
-开关默认已打开，只差地址。三种给地址的方式，优先级从高到低：
+默认关闭，需要**同时**给出「开关」与「地址」。三种写法，优先级从高到低：
 
-1. 插件配置：`telemetryUrl: "https://<name>.<subdomain>.workers.dev/v1/events"`
-2. 环境变量：`WEEKLY_REPORT_TELEMETRY_URL=https://...`
-3. 改源码常量 `src/telemetry.ts` 的 `DEFAULT_ENDPOINT` —— **维护者用这条**，填上后所有用户默认上报。
+1. 插件配置：`telemetryEnabled: true` + `telemetryUrl: "https://<name>.<subdomain>.workers.dev/v1/events"`
+2. 环境变量：`WEEKLY_REPORT_TELEMETRY=1` + `WEEKLY_REPORT_TELEMETRY_URL=https://...`
+3. 改源码常量 `src/telemetry.ts` 的 `DEFAULT_ENDPOINT` —— **维护者用这条**。注意仅填地址不会生效，
+   还需把 `isTelemetryEnabled` 的默认返回值改为 `true`，并同步修改 README 的对外表述。
 
 关闭上报：配置 `telemetryEnabled: false`，或环境变量 `WEEKLY_REPORT_TELEMETRY=0`。
 
