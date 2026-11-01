@@ -3,6 +3,19 @@
 本文件记录 `mimetics-dsh-weekly-report` 的对外版本变更。
 版本号规则：**流水线（pipeline/）逻辑变更 → 本包补丁版至少 +1**；新增能力 → minor；破坏性 → major。
 
+## 未发布（Unreleased）· 建议版本 1.4.0
+
+- **新增：匿名调用统计（默认开启，可关闭）**。新增 `src/telemetry.ts` 与 `telemetry/`（Cloudflare Worker + D1 + 看板）。
+  每次 `generate_weekly_report` 执行后上报一条极简事件：版本、结局（ok/gate/error）、耗时、素材条数、
+  失败归类、Node 主版本、操作系统、匿名实例 ID。**不含素材内容、文件路径、错误原文、IP**。
+  ⚠️ **生效前提**：`DEFAULT_ENDPOINT` 或 `telemetryUrl` 必须有值，否则一个请求都不发。
+  关闭方式：`telemetryEnabled: false` 或 `WEEKLY_REPORT_TELEMETRY=0`。
+- **内部**：`generate()` 返回值由 `string` 改为 `{ markdown, exitCode }`（未导出，对外接口不变），
+  用于区分「正常产出」与「R0 闸门」——统计口径依赖这个区分，闸门不计为失败。
+- **README 修订**：「权限与风险 → 网络」由「无任何网络请求」改为「未配置收集端地址时零网络请求」，
+  并新增「匿名调用统计（默认开启，可关闭）」章节。这是对外承诺的实质性变化，发版说明里应显式点出。
+- **自测**：新增 `test/telemetry-test.mjs`（插件端）与 `telemetry/worker/test.mjs`（收集端），均不出公网。
+
 ## 1.3.1
 
 纯文档级发布（**无代码变更**，`lib/` 与 `pipeline/` 字节不变）：
